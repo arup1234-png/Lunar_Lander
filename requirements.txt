@@ -1,0 +1,7 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+gymnasium[box2d]
+fastapi
+uvicorn[standard]
+pillow
+numpy

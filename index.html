@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lunar Lander DQN</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+body{font-family:system-ui,sans-serif;max-width:900px;margin:0 auto;padding:16px;background:#0f1420;color:#e6e9f0}
+h1{font-size:1.4rem}.card{background:#192033;border-radius:10px;padding:16px;margin-bottom:16px}
+label{display:block;margin:10px 0 4px}input[type=range],select{width:100%}
+select,button{padding:8px;border-radius:6px;border:0;font-size:1rem}
+button{background:#4f8cff;color:#fff;cursor:pointer;margin:12px 8px 0 0}button:disabled{opacity:.5}
+img{max-width:100%;border-radius:8px;margin-top:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:700px){.grid{grid-template-columns:1fr}}#msg{margin-top:10px;min-height:1.4em}
+</style></head><body>
+<h1>Lunar Lander - DQN agent</h1>
+<div class="grid">
+ <div class="card">
+  <label>Checkpoint</label>
+  <select id="ckpt"><option value="untrained">Untrained (episode 0)</option>
+   <option value="mid">Mid-training (episode 500)</option><option value="final" selected>Final</option></select>
+  <label>Gravity: <b id="gv">-10.0</b></label>
+  <input id="g" type="range" min="-11.5" max="-1" step="0.5" value="-10">
+  <label>Wind power: <b id="wv">0</b></label>
+  <input id="w" type="range" min="0" max="20" step="1" value="0">
+  <button id="play">Replay landing</button><button id="eval">Robustness test (20 runs)</button>
+  <div id="msg"></div>
+ </div>
+ <div class="card"><b>Replay</b><br><img id="gif" alt="Run a landing to see it here"></div>
+</div>
+<div class="card"><canvas id="chart" height="110"></canvas><div id="cmsg"></div></div>
+<script>
+const $=id=>document.getElementById(id);
+$("g").oninput=()=>$("gv").textContent=(+$("g").value).toFixed(1);
+$("w").oninput=()=>$("wv").textContent=$("w").value;
+const body=()=>({checkpoint:$("ckpt").value,gravity:+$("g").value,wind:+$("w").value});
+async function post(url,data){
+  const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+  const j=await r.json(); if(!r.ok) throw new Error(j.detail||r.statusText); return j;
+}
+async function run(btn,text,fn){
+  document.querySelectorAll("button").forEach(b=>b.disabled=true); $("msg").textContent=text;
+  try{await fn()}catch(e){$("msg").textContent="Error: "+e.message}
+  document.querySelectorAll("button").forEach(b=>b.disabled=false);
+}
+$("play").onclick=()=>run(0,"Simulating...",async()=>{
+  const d=await post("/api/play",body()); $("gif").src="data:image/gif;base64,"+d.gif;
+  $("msg").textContent=`Outcome: ${d.outcome} | reward ${d.reward} | ${d.steps} steps`+(d.solved?" (solved)":"");
+});
+$("eval").onclick=()=>run(0,"Running 20 episodes...",async()=>{
+  const d=await post("/api/evaluate",{...body(),episodes:20});
+  $("msg").textContent=`Mean reward ${d.mean} (std ${d.std}) | ${d.solved}/20 scored >= 200 | ${d.landed}/20 landed`;
+});
+const smooth=(a,k=20)=>a.map((_,i)=>{const s=a.slice(Math.max(0,i-k+1),i+1);return s.reduce((x,y)=>x+y,0)/s.length});
+fetch("/api/curves").then(r=>r.ok?r.json():Promise.reject()).then(c=>{
+  const sets=Object.keys(c).map(k=>({label:k+" (mean of 3 seeds, 20-ep avg)",data:smooth(c[k].mean),pointRadius:0,borderWidth:2}));
+  const n=sets[0].data.length;
+  sets.push({label:"Solved = 200",data:Array(n).fill(200),borderDash:[6,6],pointRadius:0,borderWidth:1});
+  new Chart($("chart"),{type:"line",data:{labels:[...Array(n).keys()].map(i=>i+1),datasets:sets},
+   options:{scales:{x:{title:{display:true,text:"Episode"}},y:{title:{display:true,text:"Reward"}}}}});
+}).catch(()=>$("cmsg").textContent="Reward curves not available yet (add data/curves.json).");
+</script></body></html>
